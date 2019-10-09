@@ -1,18 +1,24 @@
+/*!
+ * Copyright (c) 2016 Microsoft Corporation. All rights reserved.
+ * Licensed under the MIT License. See LICENSE file in the project root for license information.
+ */
 #ifndef LIGHTGBM_UTILS_ARRAY_AGRS_H_
 #define LIGHTGBM_UTILS_ARRAY_AGRS_H_
 
-#include <vector>
-#include <algorithm>
 #include <LightGBM/utils/openmp_wrapper.h>
+
+#include <algorithm>
+#include <utility>
+#include <vector>
 
 namespace LightGBM {
 
 /*!
-* \brief Contains some operation for a array, e.g. ArgMax, TopK.
+* \brief Contains some operation for an array, e.g. ArgMax, TopK.
 */
 template<typename VAL_T>
 class ArrayArgs {
-public:
+ public:
   inline static size_t ArgMaxMT(const std::vector<VAL_T>& array) {
     int num_threads = 1;
 #pragma omp parallel
@@ -22,7 +28,7 @@ public:
     }
     int step = std::max(1, (static_cast<int>(array.size()) + num_threads - 1) / num_threads);
     std::vector<size_t> arg_maxs(num_threads, 0);
-    #pragma omp parallel for schedule(static,1)
+    #pragma omp parallel for schedule(static, 1)
     for (int i = 0; i < num_threads; ++i) {
       size_t start = step * i;
       if (start >= array.size()) { continue; }
@@ -110,7 +116,7 @@ public:
     std::vector<VAL_T>& ref = *arr;
     VAL_T v = ref[end - 1];
     for (;;) {
-      while (ref[++i] > v);
+      while (ref[++i] > v) {}
       while (v > ref[--j]) { if (j == start) { break; } }
       if (i >= j) { break; }
       std::swap(ref[i], ref[j]);
@@ -124,8 +130,9 @@ public:
     for (int k = end - 2; k >= q; k--, i++) { std::swap(ref[i], ref[k]); }
     *l = j;
     *r = i;
-  };
+  }
 
+  // Note: k refer to index here. e.g. k=0 means get the max number.
   inline static int ArgMaxAtK(std::vector<VAL_T>* arr, int start, int end, int k) {
     if (start >= end - 1) {
       return start;
@@ -133,15 +140,17 @@ public:
     int l = start;
     int r = end - 1;
     Partition(arr, start, end, &l, &r);
-    if ((k > l && k < r) || l == 0 || r == end - 1) {
+    // if find or all elements are the same.
+    if ((k > l && k < r) || (l == start - 1 && r == end - 1)) {
       return k;
     } else if (k <= l) {
-      return ArgMaxAtK(arr, start, l, k);
+      return ArgMaxAtK(arr, start, l + 1, k);
     } else {
       return ArgMaxAtK(arr, r, end, k);
     }
   }
 
+  // Note: k is 1-based here. e.g. k=3 means get the top-3 numbers.
   inline static void MaxK(const std::vector<VAL_T>& array, int k, std::vector<VAL_T>* out) {
     out->clear();
     if (k <= 0) {
@@ -157,6 +166,30 @@ public:
     out->erase(out->begin() + k, out->end());
   }
 
+  inline static void Assign(std::vector<VAL_T>* array, VAL_T t, size_t n) {
+    array->resize(n);
+    for (size_t i = 0; i < array->size(); ++i) {
+      (*array)[i] = t;
+    }
+  }
+
+  inline static bool CheckAllZero(const std::vector<VAL_T>& array) {
+    for (size_t i = 0; i < array.size(); ++i) {
+      if (array[i] != VAL_T(0)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  inline static bool CheckAll(const std::vector<VAL_T>& array, VAL_T t) {
+    for (size_t i = 0; i < array.size(); ++i) {
+      if (array[i] != t) {
+        return false;
+      }
+    }
+    return true;
+  }
 };
 
 }  // namespace LightGBM

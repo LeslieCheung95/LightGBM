@@ -1,15 +1,17 @@
+/*!
+ * Copyright (c) 2016 Microsoft Corporation. All rights reserved.
+ * Licensed under the MIT License. See LICENSE file in the project root for license information.
+ */
 #ifndef LIGHTGBM_BOOSTING_H_
 #define LIGHTGBM_BOOSTING_H_
 
-#include <LightGBM/meta.h>
 #include <LightGBM/config.h>
+#include <LightGBM/meta.h>
 
-#ifdef USE_PROTO
-#include "model.pb.h"
-#endif // USE_PROTO
-
-#include <vector>
 #include <string>
+#include <map>
+#include <unordered_map>
+#include <vector>
 
 namespace LightGBM {
 
@@ -23,7 +25,7 @@ struct PredictionEarlyStopInstance;
 * \brief The interface for Boosting
 */
 class LIGHTGBM_EXPORT Boosting {
-public:
+ public:
   /*! \brief virtual destructor */
   virtual ~Boosting() {}
 
@@ -35,7 +37,7 @@ public:
   * \param training_metrics Training metric
   */
   virtual void Init(
-    const BoostingConfig* config,
+    const Config* config,
     const Dataset* train_data,
     const ObjectiveFunction* objective_function,
     const std::vector<const Metric*>& training_metrics) = 0;
@@ -47,10 +49,17 @@ public:
   */
   virtual void MergeFrom(const Boosting* other) = 0;
 
+  /*!
+  * \brief Shuffle Existing Models
+  */
+  virtual void ShuffleModels(int start_iter, int end_iter) = 0;
+
   virtual void ResetTrainingData(const Dataset* train_data, const ObjectiveFunction* objective_function,
                                  const std::vector<const Metric*>& training_metrics) = 0;
 
-  virtual void ResetConfig(const BoostingConfig* config) = 0;
+  virtual void ResetConfig(const Config* config) = 0;
+
+
 
   /*!
   * \brief Add a validation data
@@ -61,6 +70,11 @@ public:
                                const std::vector<const Metric*>& valid_metrics) = 0;
 
   virtual void Train(int snapshot_freq, const std::string& model_output_path) = 0;
+
+  /*!
+  * \brief Update the tree output by new training data
+  */
+  virtual void RefitTree(const std::vector<std::vector<int>>& tree_leaf_prediction) = 0;
 
   /*!
   * \brief Training logic
@@ -120,6 +134,10 @@ public:
   virtual void PredictRaw(const double* features, double* output,
                           const PredictionEarlyStopInstance* early_stop) const = 0;
 
+  virtual void PredictRawByMap(const std::unordered_map<int, double>& features, double* output,
+                               const PredictionEarlyStopInstance* early_stop) const = 0;
+
+
   /*!
   * \brief Prediction for one record, sigmoid transformation will be used if needed
   * \param feature_values Feature value on this record
@@ -129,6 +147,10 @@ public:
   virtual void Predict(const double* features, double* output,
                        const PredictionEarlyStopInstance* early_stop) const = 0;
 
+  virtual void PredictByMap(const std::unordered_map<int, double>& features, double* output,
+                            const PredictionEarlyStopInstance* early_stop) const = 0;
+
+
   /*!
   * \brief Prediction for one record with leaf index
   * \param feature_values Feature value on this record
@@ -136,6 +158,9 @@ public:
   */
   virtual void PredictLeafIndex(
     const double* features, double* output) const = 0;
+
+  virtual void PredictLeafIndexByMap(
+    const std::unordered_map<int, double>& features, double* output) const = 0;
 
   /*!
   * \brief Feature contributions for the model's prediction of one record
@@ -148,10 +173,11 @@ public:
 
   /*!
   * \brief Dump model to json format string
+  * \param start_iteration The model will be saved start from
   * \param num_iteration Number of iterations that want to dump, -1 means dump all
   * \return Json format string of model
   */
-  virtual std::string DumpModel(int num_iteration) const = 0;
+  virtual std::string DumpModel(int start_iteration, int num_iteration) const = 0;
 
   /*!
   * \brief Translate model to if-else statement
@@ -170,42 +196,29 @@ public:
 
   /*!
   * \brief Save model to file
+  * \param start_iteration The model will be saved start from
   * \param num_iterations Number of model that want to save, -1 means save all
   * \param is_finish Is training finished or not
   * \param filename Filename that want to save to
   * \return true if succeeded
   */
-  virtual bool SaveModelToFile(int num_iterations, const char* filename) const = 0;
+  virtual bool SaveModelToFile(int start_iteration, int num_iterations, const char* filename) const = 0;
 
   /*!
   * \brief Save model to string
+  * \param start_iteration The model will be saved start from
   * \param num_iterations Number of model that want to save, -1 means save all
   * \return Non-empty string if succeeded
   */
-  virtual std::string SaveModelToString(int num_iterations) const = 0;
+  virtual std::string SaveModelToString(int start_iteration, int num_iterations) const = 0;
 
   /*!
   * \brief Restore from a serialized string
-  * \param model_str The string of model
+  * \param buffer The content of model
+  * \param len The length of buffer
   * \return true if succeeded
   */
-  virtual bool LoadModelFromString(const std::string& model_str) = 0;
-
-  #ifdef USE_PROTO
-  /*!
-  * \brief Save model with protobuf
-  * \param num_iterations Number of model that want to save, -1 means save all
-  * \param filename Filename that want to save to
-  */
-  virtual void SaveModelToProto(int num_iteration, const char* filename) const = 0;
-  
-  /*!
-  * \brief Restore from a serialized protobuf file
-  * \param filename Filename that want to restore from
-  * \return true if succeeded
-  */
-  virtual bool LoadModelFromProto(const char* filename) = 0;
-  #endif // USE_PROTO
+  virtual bool LoadModelFromString(const char* buffer, size_t len) = 0;
 
   /*!
   * \brief Calculate feature importances
@@ -257,8 +270,9 @@ public:
   /*!
   * \brief Initial work for the prediction
   * \param num_iteration number of used iteration
+  * \param is_pred_contrib
   */
-  virtual void InitPredict(int num_iteration) = 0;
+  virtual void InitPredict(int num_iteration, bool is_pred_contrib) = 0;
 
   /*!
   * \brief Name of submodel
@@ -271,7 +285,7 @@ public:
   /*! \brief Disable copy */
   Boosting(const Boosting&) = delete;
 
-  static bool LoadFileToBoosting(Boosting* boosting, const std::string& format, const char* filename);
+  static bool LoadFileToBoosting(Boosting* boosting, const char* filename);
 
   /*!
   * \brief Create boosting object
@@ -281,12 +295,11 @@ public:
   * \param filename name of model file, if existing will continue to train from this model
   * \return The boosting object
   */
-  static Boosting* CreateBoosting(const std::string& type, const std::string& format, const char* filename);
-
+  static Boosting* CreateBoosting(const std::string& type, const char* filename);
 };
 
 class GBDTBase : public Boosting {
-public:
+ public:
   virtual double GetLeafValue(int tree_idx, int leaf_idx) const = 0;
   virtual void SetLeafValue(int tree_idx, int leaf_idx, double val) = 0;
 };

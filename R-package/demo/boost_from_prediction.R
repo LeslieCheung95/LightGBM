@@ -5,12 +5,12 @@ require(methods)
 data(agaricus.train, package = "lightgbm")
 data(agaricus.test, package = "lightgbm")
 dtrain <- lgb.Dataset(agaricus.train$data, label = agaricus.train$label)
-dtest <- lgb.Dataset(agaricus.test$data, label = agaricus.test$label)
+dtest <- lgb.Dataset.create.valid(dtrain, data = agaricus.test$data, label = agaricus.test$label)
 
 valids <- list(eval = dtest, train = dtrain)
 #--------------------Advanced features ---------------------------
-# advanced: start from a initial base prediction
-print("Start running example to start from a initial prediction")
+# advanced: start from an initial base prediction
+print("Start running example to start from an initial prediction")
 
 # Train lightgbm for 1 round
 param <- list(num_leaves = 4,

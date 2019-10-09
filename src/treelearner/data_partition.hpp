@@ -1,13 +1,16 @@
+/*!
+ * Copyright (c) 2016 Microsoft Corporation. All rights reserved.
+ * Licensed under the MIT License. See LICENSE file in the project root for license information.
+ */
 #ifndef LIGHTGBM_TREELEARNER_DATA_PARTITION_HPP_
 #define LIGHTGBM_TREELEARNER_DATA_PARTITION_HPP_
 
-#include <LightGBM/meta.h>
 #include <LightGBM/dataset.h>
-
+#include <LightGBM/meta.h>
 #include <LightGBM/utils/openmp_wrapper.h>
 
+#include <algorithm>
 #include <cstring>
-
 #include <vector>
 
 namespace LightGBM {
@@ -15,7 +18,7 @@ namespace LightGBM {
 * \brief DataPartition is used to store the the partition of data on tree.
 */
 class DataPartition {
-public:
+ public:
   DataPartition(data_size_t num_data, int num_leaves)
     :num_data_(num_data), num_leaves_(num_leaves) {
     leaf_begin_.resize(num_leaves_);
@@ -48,7 +51,6 @@ public:
     temp_right_indices_.resize(num_data_);
   }
   ~DataPartition() {
-
   }
 
   /*!
@@ -68,6 +70,21 @@ public:
       // if bagging
       leaf_count_[0] = used_data_count_;
       std::memcpy(indices_.data(), used_data_indices_, used_data_count_ * sizeof(data_size_t));
+    }
+  }
+
+  void ResetByLeafPred(const std::vector<int>& leaf_pred, int num_leaves) {
+    ResetLeaves(num_leaves);
+    std::vector<std::vector<data_size_t>> indices_per_leaf(num_leaves_);
+    for (data_size_t i = 0; i < static_cast<data_size_t>(leaf_pred.size()); ++i) {
+      indices_per_leaf[leaf_pred[i]].push_back(i);
+    }
+    data_size_t offset = 0;
+    for (int i = 0; i < num_leaves_; ++i) {
+      leaf_begin_[i] = offset;
+      leaf_count_[i] = static_cast<data_size_t>(indices_per_leaf[i].size());
+      std::copy(indices_per_leaf[i].begin(), indices_per_leaf[i].end(), indices_.begin() + leaf_begin_[i]);
+      offset += leaf_count_[i];
     }
   }
 
@@ -174,7 +191,7 @@ public:
   /*! \brief Get number of leaves */
   int num_leaves() const { return num_leaves_; }
 
-private:
+ private:
   /*! \brief Number of all data */
   data_size_t num_data_;
   /*! \brief Number of all leaves */

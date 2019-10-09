@@ -1,21 +1,25 @@
+/*!
+ * Copyright (c) 2016 Microsoft Corporation. All rights reserved.
+ * Licensed under the MIT License. See LICENSE file in the project root for license information.
+ */
 #ifndef LIGHTGBM_NETWORK_LINKERS_H_
 #define LIGHTGBM_NETWORK_LINKERS_H_
 
-
-#include <LightGBM/meta.h>
 #include <LightGBM/config.h>
+#include <LightGBM/meta.h>
 #include <LightGBM/network.h>
+#include <LightGBM/utils/common.h>
 
+#include <string>
 #include <algorithm>
 #include <chrono>
 #include <ctime>
-#ifdef USE_SOCKET
-#include "socket_wrapper.hpp"
-#include <LightGBM/utils/common.h>
+#include <memory>
 #include <thread>
 #include <vector>
-#include <string>
-#include <memory>
+
+#ifdef USE_SOCKET
+#include "socket_wrapper.hpp"
 #endif
 
 #ifdef USE_MPI
@@ -26,12 +30,12 @@
 namespace LightGBM {
 
 /*!
-* \brief An network basic communication warpper.
+* \brief A network basic communication warpper.
 * Will warp low level communication methods, e.g. mpi, socket and so on.
 * This class will wrap all linkers to other machines if needs
 */
 class Linkers {
-public:
+ public:
   Linkers() {
     is_init_ = false;
   }
@@ -39,7 +43,7 @@ public:
   * \brief Constructor
   * \param config Config of network settings
   */
-  explicit Linkers(NetworkConfig config);
+  explicit Linkers(Config config);
   /*!
   * \brief Destructor
   */
@@ -48,27 +52,35 @@ public:
   * \brief Recv data, blocking
   * \param rank Which rank will send data to local machine
   * \param data Pointer of receive data
-  * \prama len Recv size, will block until recive len size of data
+  * \param len Recv size, will block until recive len size of data
   */
   inline void Recv(int rank, char* data, int len) const;
+
+  inline void Recv(int rank, char* data, int64_t len) const;
+
   /*!
   * \brief Send data, blocking
   * \param rank Which rank local machine will send to
   * \param data Pointer of send data
-  * \prama len Send size
+  * \param len Send size
   */
   inline void Send(int rank, char* data, int len) const;
+
+  inline void Send(int rank, char* data, int64_t len) const;
   /*!
   * \brief Send and Recv at same time, blocking
   * \param send_rank
   * \param send_data
-  * \prama send_len
+  * \param send_len
   * \param recv_rank
   * \param recv_data
-  * \prama recv_len
+  * \param recv_len
   */
   inline void SendRecv(int send_rank, char* send_data, int send_len,
-    int recv_rank, char* recv_data, int recv_len);
+                       int recv_rank, char* recv_data, int recv_len);
+
+  inline void SendRecv(int send_rank, char* send_data, int64_t send_len,
+                       int recv_rank, char* recv_data, int64_t recv_len);
   /*!
   * \brief Get rank of local machine
   */
@@ -127,7 +139,7 @@ public:
   #endif  // USE_SOCKET
 
 
-private:
+ private:
   /*! \brief Rank of local machine */
   int rank_;
   /*! \brief Total number machines */
@@ -174,15 +186,47 @@ inline const RecursiveHalvingMap& Linkers::recursive_halving_map() {
   return recursive_halving_map_;
 }
 
+inline void Linkers::Recv(int rank, char* data, int64_t len) const {
+  int64_t used = 0;
+  do {
+    int cur_size = static_cast<int>(std::min<int64_t>(len - used, INT32_MAX));
+    Recv(rank, data + used, cur_size);
+    used += cur_size;
+  } while (used < len);
+}
+
+inline void Linkers::Send(int rank, char* data, int64_t len) const {
+  int64_t used = 0;
+  do {
+    int cur_size = static_cast<int>(std::min<int64_t>(len - used, INT32_MAX));
+    Send(rank, data + used, cur_size);
+    used += cur_size;
+  } while (used < len);
+}
+
+inline void Linkers::SendRecv(int send_rank, char* send_data, int64_t send_len,
+                              int recv_rank, char* recv_data, int64_t recv_len) {
+  auto start_time = std::chrono::high_resolution_clock::now();
+  std::thread send_worker(
+    [this, send_rank, send_data, send_len]() {
+    Send(send_rank, send_data, send_len);
+  });
+  Recv(recv_rank, recv_data, recv_len);
+  send_worker.join();
+  // wait for send complete
+  auto end_time = std::chrono::high_resolution_clock::now();
+  // output used time on each iteration
+  network_time_ += std::chrono::duration<double, std::milli>(end_time - start_time);
+}
+
 #ifdef USE_SOCKET
 
 inline void Linkers::Recv(int rank, char* data, int len) const {
   int recv_cnt = 0;
   while (recv_cnt < len) {
     recv_cnt += linkers_[rank]->Recv(data + recv_cnt,
-      //len - recv_cnt
-      std::min(len - recv_cnt, SocketConfig::kMaxReceiveSize)
-    );
+      // len - recv_cnt
+      std::min(len - recv_cnt, SocketConfig::kMaxReceiveSize));
   }
 }
 
@@ -197,7 +241,7 @@ inline void Linkers::Send(int rank, char* data, int len) const {
 }
 
 inline void Linkers::SendRecv(int send_rank, char* send_data, int send_len,
-  int recv_rank, char* recv_data, int recv_len) {
+                              int recv_rank, char* recv_data, int recv_len) {
   auto start_time = std::chrono::high_resolution_clock::now();
   if (send_len < SocketConfig::kSocketBufferSize) {
     // if buffer is enough, send will non-blocking
@@ -244,7 +288,7 @@ inline void Linkers::Send(int rank, char* data, int len) const {
 }
 
 inline void Linkers::SendRecv(int send_rank, char* send_data, int send_len,
-  int recv_rank, char* recv_data, int recv_len) {
+                              int recv_rank, char* recv_data, int recv_len) {
   MPI_Request send_request;
   // send first, non-blocking
   MPI_SAFE_CALL(MPI_Isend(send_data, send_len, MPI_BYTE, send_rank, 0, MPI_COMM_WORLD, &send_request));

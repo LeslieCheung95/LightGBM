@@ -1,14 +1,18 @@
+/*!
+ * Copyright (c) 2016 Microsoft Corporation. All rights reserved.
+ * Licensed under the MIT License. See LICENSE file in the project root for license information.
+ */
 #ifndef LIGHTGBM_METRIC_BINARY_METRIC_HPP_
 #define LIGHTGBM_METRIC_BINARY_METRIC_HPP_
 
-#include <LightGBM/utils/log.h>
-#include <LightGBM/utils/common.h>
-
 #include <LightGBM/metric.h>
+#include <LightGBM/utils/common.h>
+#include <LightGBM/utils/log.h>
 
+#include <string>
 #include <algorithm>
-#include <vector>
 #include <sstream>
+#include <vector>
 
 namespace LightGBM {
 
@@ -18,13 +22,11 @@ namespace LightGBM {
 */
 template<typename PointWiseLossCalculator>
 class BinaryMetric: public Metric {
-public:
-  explicit BinaryMetric(const MetricConfig&) {
-
+ public:
+  explicit BinaryMetric(const Config&) {
   }
 
   virtual ~BinaryMetric() {
-
   }
 
   void Init(const Metadata& metadata, data_size_t num_data) override {
@@ -94,13 +96,13 @@ public:
     return std::vector<double>(1, loss);
   }
 
-private:
+ private:
   /*! \brief Number of data */
   data_size_t num_data_;
   /*! \brief Pointer of label */
-  const float* label_;
+  const label_t* label_;
   /*! \brief Pointer of weighs */
-  const float* weights_;
+  const label_t* weights_;
   /*! \brief Sum weights */
   double sum_weights_;
   /*! \brief Name of test set */
@@ -111,10 +113,10 @@ private:
 * \brief Log loss metric for binary classification task.
 */
 class BinaryLoglossMetric: public BinaryMetric<BinaryLoglossMetric> {
-public:
-  explicit BinaryLoglossMetric(const MetricConfig& config) :BinaryMetric<BinaryLoglossMetric>(config) {}
+ public:
+  explicit BinaryLoglossMetric(const Config& config) :BinaryMetric<BinaryLoglossMetric>(config) {}
 
-  inline static double LossOnPoint(float label, double prob) {
+  inline static double LossOnPoint(label_t label, double prob) {
     if (label <= 0) {
       if (1.0f - prob > kEpsilon) {
         return -std::log(1.0f - prob);
@@ -135,10 +137,10 @@ public:
 * \brief Error rate metric for binary classification task.
 */
 class BinaryErrorMetric: public BinaryMetric<BinaryErrorMetric> {
-public:
-  explicit BinaryErrorMetric(const MetricConfig& config) :BinaryMetric<BinaryErrorMetric>(config) {}
+ public:
+  explicit BinaryErrorMetric(const Config& config) :BinaryMetric<BinaryErrorMetric>(config) {}
 
-  inline static double LossOnPoint(float label, double prob) {
+  inline static double LossOnPoint(label_t label, double prob) {
     if (prob <= 0.5f) {
       return label > 0;
     } else {
@@ -155,9 +157,8 @@ public:
 * \brief Auc Metric for binary classification task.
 */
 class AUCMetric: public Metric {
-public:
-  explicit AUCMetric(const MetricConfig&) {
-
+ public:
+  explicit AUCMetric(const Config&) {
   }
 
   virtual ~AUCMetric() {
@@ -208,7 +209,7 @@ public:
     double threshold = score[sorted_idx[0]];
     if (weights_ == nullptr) {  // no weights
       for (data_size_t i = 0; i < num_data_; ++i) {
-        const float cur_label = label_[sorted_idx[i]];
+        const label_t cur_label = label_[sorted_idx[i]];
         const double cur_score = score[sorted_idx[i]];
         // new threshold
         if (cur_score != threshold) {
@@ -224,9 +225,9 @@ public:
       }
     } else {  // has weights
       for (data_size_t i = 0; i < num_data_; ++i) {
-        const float cur_label = label_[sorted_idx[i]];
+        const label_t cur_label = label_[sorted_idx[i]];
         const double cur_score = score[sorted_idx[i]];
-        const float cur_weight = weights_[sorted_idx[i]];
+        const label_t cur_weight = weights_[sorted_idx[i]];
         // new threshold
         if (cur_score != threshold) {
           threshold = cur_score;
@@ -249,13 +250,13 @@ public:
     return std::vector<double>(1, auc);
   }
 
-private:
+ private:
   /*! \brief Number of data */
   data_size_t num_data_;
   /*! \brief Pointer of label */
-  const float* label_;
+  const label_t* label_;
   /*! \brief Pointer of weighs */
-  const float* weights_;
+  const label_t* weights_;
   /*! \brief Sum weights */
   double sum_weights_;
   /*! \brief Name of test set */

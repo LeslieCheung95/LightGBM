@@ -1,28 +1,31 @@
+/*!
+ * Copyright (c) 2016 Microsoft Corporation. All rights reserved.
+ * Licensed under the MIT License. See LICENSE file in the project root for license information.
+ */
 #ifndef LIGHTGBM_METRIC_RANK_METRIC_HPP_
 #define LIGHTGBM_METRIC_RANK_METRIC_HPP_
 
+#include <LightGBM/metric.h>
 #include <LightGBM/utils/common.h>
 #include <LightGBM/utils/log.h>
-
-#include <LightGBM/metric.h>
-
 #include <LightGBM/utils/openmp_wrapper.h>
 
+#include <string>
 #include <sstream>
 #include <vector>
 
 namespace LightGBM {
 
 class NDCGMetric:public Metric {
-public:
-  explicit NDCGMetric(const MetricConfig& config) {
+ public:
+  explicit NDCGMetric(const Config& config) {
     // get eval position
-    for (auto k : config.eval_at) {
-      eval_at_.push_back(static_cast<data_size_t>(k));
-    }
-    eval_at_.shrink_to_fit();
+    eval_at_ = config.eval_at;
+    auto label_gain = config.label_gain;
+    DCGCalculator::DefaultEvalAt(&eval_at_);
+    DCGCalculator::DefaultLabelGain(&label_gain);
     // initialize DCG calculator
-    DCGCalculator::Init(config.label_gain);
+    DCGCalculator::Init(label_gain);
     // get number of threads
     #pragma omp parallel
     #pragma omp master
@@ -57,9 +60,11 @@ public:
         sum_query_weights_ += query_weights_[i];
       }
     }
+    inverse_max_dcgs_.resize(num_queries_);
     // cache the inverse max DCG for all querys, used to calculate NDCG
+    #pragma omp parallel for schedule(static)
     for (data_size_t i = 0; i < num_queries_; ++i) {
-      inverse_max_dcgs_.emplace_back(eval_at_.size(), 0.0f);
+      inverse_max_dcgs_[i].resize(eval_at_.size(), 0.0f);
       DCGCalculator::CalMaxDCG(eval_at_, label_ + query_boundaries_[i],
                                query_boundaries_[i + 1] - query_boundaries_[i],
                                &inverse_max_dcgs_[i]);
@@ -142,11 +147,11 @@ public:
     return result;
   }
 
-private:
+ private:
   /*! \brief Number of data */
   data_size_t num_data_;
   /*! \brief Pointer of label */
-  const float* label_;
+  const label_t* label_;
   /*! \brief Name of test set */
   std::vector<std::string> name_;
   /*! \brief Query boundaries information */
@@ -154,7 +159,7 @@ private:
   /*! \brief Number of queries */
   data_size_t num_queries_;
   /*! \brief Weights of queries */
-  const float* query_weights_;
+  const label_t* query_weights_;
   /*! \brief Sum weights of queries */
   double sum_query_weights_;
   /*! \brief Evaluate position of NDCG */

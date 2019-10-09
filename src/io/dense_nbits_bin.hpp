@@ -1,18 +1,22 @@
+/*!
+ * Copyright (c) 2017 Microsoft Corporation. All rights reserved.
+ * Licensed under the MIT License. See LICENSE file in the project root for license information.
+ */
 #ifndef LIGHTGBM_IO_DENSE_NBITS_BIN_HPP_
 #define LIGHTGBM_IO_DENSE_NBITS_BIN_HPP_
 
 #include <LightGBM/bin.h>
 
-#include <vector>
-#include <cstring>
 #include <cstdint>
+#include <cstring>
+#include <vector>
 
 namespace LightGBM {
 
 class Dense4bitsBin;
 
-class Dense4bitsBinIterator: public BinIterator {
-public:
+class Dense4bitsBinIterator : public BinIterator {
+ public:
   explicit Dense4bitsBinIterator(const Dense4bitsBin* bin_data, uint32_t min_bin, uint32_t max_bin, uint32_t default_bin)
     : bin_data_(bin_data), min_bin_(static_cast<uint8_t>(min_bin)),
     max_bin_(static_cast<uint8_t>(max_bin)),
@@ -25,8 +29,9 @@ public:
   }
   inline uint32_t RawGet(data_size_t idx) override;
   inline uint32_t Get(data_size_t idx) override;
-  inline void Reset(data_size_t) override { }
-private:
+  inline void Reset(data_size_t) override {}
+
+ private:
   const Dense4bitsBin* bin_data_;
   uint8_t min_bin_;
   uint8_t max_bin_;
@@ -34,29 +39,20 @@ private:
   uint8_t bias_;
 };
 
-class Dense4bitsBin: public Bin {
-public:
+class Dense4bitsBin : public Bin {
+ public:
   friend Dense4bitsBinIterator;
-  Dense4bitsBin(data_size_t num_data)
+  explicit Dense4bitsBin(data_size_t num_data)
     : num_data_(num_data) {
     int len = (num_data_ + 1) / 2;
     data_ = std::vector<uint8_t>(len, static_cast<uint8_t>(0));
+    buf_ = std::vector<uint8_t>(len, static_cast<uint8_t>(0));
   }
 
   ~Dense4bitsBin() {
-
   }
 
   void Push(int, data_size_t idx, uint32_t value) override {
-    if (buf_.empty()) {
-      #pragma omp critical
-      {
-        if (buf_.empty()) {
-          int len = (num_data_ + 1) / 2;
-          buf_ = std::vector<uint8_t>(len, static_cast<uint8_t>(0));
-        }
-      }
-    }
     const int i1 = idx >> 1;
     const int i2 = (idx & 1) << 2;
     const uint8_t val = static_cast<uint8_t>(value) << i2;
@@ -70,7 +66,7 @@ public:
   void ReSize(data_size_t num_data) override {
     if (num_data_ != num_data) {
       num_data_ = num_data;
-      int len = (num_data_ + 1) / 2;
+      const int len = (num_data_ + 1) / 2;
       data_.resize(len);
     }
   }
@@ -80,22 +76,20 @@ public:
   void ConstructHistogram(const data_size_t* data_indices, data_size_t num_data,
                           const score_t* ordered_gradients, const score_t* ordered_hessians,
                           HistogramBinEntry* out) const override {
-
     const data_size_t rest = num_data & 0x3;
     data_size_t i = 0;
     for (; i < num_data - rest; i += 4) {
+      const data_size_t idx0 = data_indices[i];
+      const auto bin0 = (data_[idx0 >> 1] >> ((idx0 & 1) << 2)) & 0xf;
 
-      data_size_t idx = data_indices[i];
-      const auto bin0 = (data_[idx >> 1] >> ((idx & 1) << 2)) & 0xf;
+      const data_size_t idx1 = data_indices[i + 1];
+      const auto bin1 = (data_[idx1 >> 1] >> ((idx1 & 1) << 2)) & 0xf;
 
-      idx = data_indices[i + 1];
-      const auto bin1 = (data_[idx >> 1] >> ((idx & 1) << 2)) & 0xf;
+      const data_size_t idx2 = data_indices[i + 2];
+      const auto bin2 = (data_[idx2 >> 1] >> ((idx2 & 1) << 2)) & 0xf;
 
-      idx = data_indices[i + 2];
-      const auto bin2 = (data_[idx >> 1] >> ((idx & 1) << 2)) & 0xf;
-
-      idx = data_indices[i + 3];
-      const auto bin3 = (data_[idx >> 1] >> ((idx & 1) << 2)) & 0xf;
+      const data_size_t idx3 = data_indices[i + 3];
+      const auto bin3 = (data_[idx3 >> 1] >> ((idx3 & 1) << 2)) & 0xf;
 
       out[bin0].sum_gradients += ordered_gradients[i];
       out[bin1].sum_gradients += ordered_gradients[i + 1];
@@ -111,7 +105,6 @@ public:
       ++out[bin1].cnt;
       ++out[bin2].cnt;
       ++out[bin3].cnt;
-
     }
 
     for (; i < num_data; ++i) {
@@ -129,12 +122,10 @@ public:
     const data_size_t rest = num_data & 0x3;
     data_size_t i = 0;
     for (; i < num_data - rest; i += 4) {
-      int j = i >> 1;
-      const auto bin0 = (data_[j]) & 0xf;
-      const auto bin1 = (data_[j] >> 4) & 0xf;
-      ++j;
-      const auto bin2 = (data_[j]) & 0xf;
-      const auto bin3 = (data_[j] >> 4) & 0xf;
+      const auto bin0 = (data_[i >> 1]) & 0xf;
+      const auto bin1 = (data_[i >> 1] >> 4) & 0xf;
+      const auto bin2 = (data_[(i >> 1) + 1]) & 0xf;
+      const auto bin3 = (data_[(i >> 1) + 1] >> 4) & 0xf;
 
       out[bin0].sum_gradients += ordered_gradients[i];
       out[bin1].sum_gradients += ordered_gradients[i + 1];
@@ -165,17 +156,17 @@ public:
     const data_size_t rest = num_data & 0x3;
     data_size_t i = 0;
     for (; i < num_data - rest; i += 4) {
-      data_size_t idx = data_indices[i];
-      const auto bin0 = (data_[idx >> 1] >> ((idx & 1) << 2)) & 0xf;
+      const data_size_t idx0 = data_indices[i];
+      const auto bin0 = (data_[idx0 >> 1] >> ((idx0 & 1) << 2)) & 0xf;
 
-      idx = data_indices[i + 1];
-      const auto bin1 = (data_[idx >> 1] >> ((idx & 1) << 2)) & 0xf;
+      const data_size_t idx1 = data_indices[i + 1];
+      const auto bin1 = (data_[idx1 >> 1] >> ((idx1 & 1) << 2)) & 0xf;
 
-      idx = data_indices[i + 2];
-      const auto bin2 = (data_[idx >> 1] >> ((idx & 1) << 2)) & 0xf;
+      const data_size_t idx2 = data_indices[i + 2];
+      const auto bin2 = (data_[idx2 >> 1] >> ((idx2 & 1) << 2)) & 0xf;
 
-      idx = data_indices[i + 3];
-      const auto bin3 = (data_[idx >> 1] >> ((idx & 1) << 2)) & 0xf;
+      const data_size_t idx3 = data_indices[i + 3];
+      const auto bin3 = (data_[idx3 >> 1] >> ((idx3 & 1) << 2)) & 0xf;
 
       out[bin0].sum_gradients += ordered_gradients[i];
       out[bin1].sum_gradients += ordered_gradients[i + 1];
@@ -202,12 +193,10 @@ public:
     const data_size_t rest = num_data & 0x3;
     data_size_t i = 0;
     for (; i < num_data - rest; i += 4) {
-      int j = i >> 1;
-      const auto bin0 = (data_[j]) & 0xf;
-      const auto bin1 = (data_[j] >> 4) & 0xf;
-      ++j;
-      const auto bin2 = (data_[j]) & 0xf;
-      const auto bin3 = (data_[j] >> 4) & 0xf;
+      const auto bin0 = (data_[i >> 1]) & 0xf;
+      const auto bin1 = (data_[i >> 1] >> 4) & 0xf;
+      const auto bin2 = (data_[(i >> 1) + 1]) & 0xf;
+      const auto bin3 = (data_[(i >> 1) + 1] >> 4) & 0xf;
 
       out[bin0].sum_gradients += ordered_gradients[i];
       out[bin1].sum_gradients += ordered_gradients[i + 1];
@@ -226,7 +215,7 @@ public:
     }
   }
 
-  virtual data_size_t Split(
+  data_size_t Split(
     uint32_t min_bin, uint32_t max_bin, uint32_t default_bin, MissingType missing_type, bool default_left,
     uint32_t threshold, data_size_t* data_indices, data_size_t num_data,
     data_size_t* lte_indices, data_size_t* gt_indices) const override {
@@ -287,7 +276,7 @@ public:
     return lte_count;
   }
 
-  virtual data_size_t SplitCategorical(
+  data_size_t SplitCategorical(
     uint32_t min_bin, uint32_t max_bin, uint32_t default_bin,
     const uint32_t* threshold, int num_threahold, data_size_t* data_indices, data_size_t num_data,
     data_size_t* lte_indices, data_size_t* gt_indices) const override {
@@ -370,15 +359,22 @@ public:
     }
   }
 
-  void SaveBinaryToFile(FILE* file) const override {
-    fwrite(data_.data(), sizeof(uint8_t), data_.size(), file);
+  void SaveBinaryToFile(const VirtualFileWriter* writer) const override {
+    writer->Write(data_.data(), sizeof(uint8_t) * data_.size());
   }
 
   size_t SizesInByte() const override {
     return sizeof(uint8_t) * data_.size();
   }
 
-protected:
+  Dense4bitsBin* Clone() override {
+    return new Dense4bitsBin(*this);
+  }
+
+ protected:
+  Dense4bitsBin(const Dense4bitsBin& other)
+    : num_data_(other.num_data_), data_(other.data_), buf_(other.buf_) {}
+
   data_size_t num_data_;
   std::vector<uint8_t> data_;
   std::vector<uint8_t> buf_;

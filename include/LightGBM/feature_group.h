@@ -1,10 +1,13 @@
+/*!
+ * Copyright (c) 2017 Microsoft Corporation. All rights reserved.
+ * Licensed under the MIT License. See LICENSE file in the project root for license information.
+ */
 #ifndef LIGHTGBM_FEATURE_GROUP_H_
 #define LIGHTGBM_FEATURE_GROUP_H_
 
-#include <LightGBM/utils/random.h>
-
-#include <LightGBM/meta.h>
 #include <LightGBM/bin.h>
+#include <LightGBM/meta.h>
+#include <LightGBM/utils/random.h>
 
 #include <cstdio>
 #include <memory>
@@ -16,7 +19,7 @@ class Dataset;
 class DatasetLoader;
 /*! \brief Using to store data and providing some operations on one feature group*/
 class FeatureGroup {
-public:
+ public:
   friend Dataset;
   friend DatasetLoader;
   /*!
@@ -28,15 +31,15 @@ public:
   * \param sparse_threshold Threshold for treating a feature as a sparse feature
   */
   FeatureGroup(int num_feature,
-    std::vector<std::unique_ptr<BinMapper>>& bin_mappers,
+    std::vector<std::unique_ptr<BinMapper>>* bin_mappers,
     data_size_t num_data, double sparse_threshold, bool is_enable_sparse) : num_feature_(num_feature) {
-    CHECK(static_cast<int>(bin_mappers.size()) == num_feature);
+    CHECK(static_cast<int>(bin_mappers->size()) == num_feature);
     // use bin at zero to store default_bin
     num_total_bin_ = 1;
     bin_offsets_.emplace_back(num_total_bin_);
     int cnt_non_zero = 0;
     for (int i = 0; i < num_feature_; ++i) {
-      bin_mappers_.emplace_back(bin_mappers[i].release());
+      bin_mappers_.emplace_back(bin_mappers->at(i).release());
       auto num_bin = bin_mappers_[i]->num_bin();
       if (bin_mappers_[i]->GetDefaultBin() == 0) {
         num_bin -= 1;
@@ -51,14 +54,14 @@ public:
   }
 
   FeatureGroup(int num_feature,
-               std::vector<std::unique_ptr<BinMapper>>& bin_mappers,
+               std::vector<std::unique_ptr<BinMapper>>* bin_mappers,
                data_size_t num_data, bool is_sparse) : num_feature_(num_feature) {
-    CHECK(static_cast<int>(bin_mappers.size()) == num_feature);
+    CHECK(static_cast<int>(bin_mappers->size()) == num_feature);
     // use bin at zero to store default_bin
     num_total_bin_ = 1;
     bin_offsets_.emplace_back(num_total_bin_);
     for (int i = 0; i < num_feature_; ++i) {
-      bin_mappers_.emplace_back(bin_mappers[i].release());
+      bin_mappers_.emplace_back(bin_mappers->at(i).release());
       auto num_bin = bin_mappers_[i]->num_bin();
       if (bin_mappers_[i]->GetDefaultBin() == 0) {
         num_bin -= 1;
@@ -145,7 +148,7 @@ public:
     uint32_t default_bin = bin_mappers_[sub_feature]->GetDefaultBin();
     return bin_data_->GetIterator(min_bin, max_bin, default_bin);
   }
-  
+
   /*!
    * \brief Returns a BinIterator that can access the entire feature group's raw data.
    *        The RawGet() function of the iterator should be called for best efficiency.
@@ -176,7 +179,6 @@ public:
     } else {
       return bin_data_->SplitCategorical(min_bin, max_bin, default_bin, threshold, num_threshold, data_indices, num_data, lte_indices, gt_indices);
     }
-
   }
   /*!
   * \brief From bin to feature value
@@ -191,13 +193,13 @@ public:
   * \brief Save binary data to file
   * \param file File want to write
   */
-  void SaveBinaryToFile(FILE* file) const {
-    fwrite(&is_sparse_, sizeof(is_sparse_), 1, file);
-    fwrite(&num_feature_, sizeof(num_feature_), 1, file);
+  void SaveBinaryToFile(const VirtualFileWriter* writer) const {
+    writer->Write(&is_sparse_, sizeof(is_sparse_));
+    writer->Write(&num_feature_, sizeof(num_feature_));
     for (int i = 0; i < num_feature_; ++i) {
-      bin_mappers_[i]->SaveBinaryToFile(file);
+      bin_mappers_[i]->SaveBinaryToFile(writer);
     }
-    bin_data_->SaveBinaryToFile(file);
+    bin_data_->SaveBinaryToFile(writer);
   }
   /*!
   * \brief Get sizes in byte of this object
@@ -212,10 +214,22 @@ public:
   }
   /*! \brief Disable copy */
   FeatureGroup& operator=(const FeatureGroup&) = delete;
-  /*! \brief Disable copy */
-  FeatureGroup(const FeatureGroup&) = delete;
+  /*! \brief Deep copy */
+  FeatureGroup(const FeatureGroup& other) {
+    num_feature_ = other.num_feature_;
+    is_sparse_ = other.is_sparse_;
+    num_total_bin_ = other.num_total_bin_;
+    bin_offsets_ = other.bin_offsets_;
 
-private:
+    bin_mappers_.reserve(other.bin_mappers_.size());
+    for (auto& bin_mapper : other.bin_mappers_) {
+      bin_mappers_.emplace_back(new BinMapper(*bin_mapper));
+    }
+
+    bin_data_.reset(other.bin_data_->Clone());
+  }
+
+ private:
   /*! \brief Number of features */
   int num_feature_;
   /*! \brief Bin mapper for sub features */

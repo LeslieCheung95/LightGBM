@@ -3,14 +3,14 @@
 \name{setinfo}
 \alias{setinfo}
 \alias{setinfo.lgb.Dataset}
-\title{Set information of an lgb.Dataset object}
+\title{Set information of an \code{lgb.Dataset} object}
 \usage{
 setinfo(dataset, ...)
 
 \method{setinfo}{lgb.Dataset}(dataset, name, info, ...)
 }
 \arguments{
-\item{dataset}{Object of class "lgb.Dataset"}
+\item{dataset}{Object of class \code{lgb.Dataset}}
 
 \item{...}{other parameters}
 
@@ -22,7 +22,7 @@ setinfo(dataset, ...)
 passed object
 }
 \description{
-Set information of an lgb.Dataset object
+Set information of an \code{lgb.Dataset} object
 }
 \details{
 The \code{name} field can be one of the following:
@@ -35,7 +35,6 @@ The \code{name} field can be one of the following:
 }
 }
 \examples{
-\dontrun{
 library(lightgbm)
 data(agaricus.train, package = "lightgbm")
 train <- agaricus.train
@@ -47,6 +46,5 @@ lightgbm::setinfo(dtrain, "label", 1 - labels)
 
 labels2 <- lightgbm::getinfo(dtrain, "label")
 stopifnot(all.equal(labels2, 1 - labels))
-}
 
 }
